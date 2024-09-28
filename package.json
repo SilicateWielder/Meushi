@@ -1,0 +1,24 @@
+{
+  "name": "meushibot",
+  "version": "1.0.0",
+  "description": "A smarter Minecraft bot.",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "date-fns": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "faiss-node": "^0.5.1",
+    "minecraft-data": "^3.68.0",
+    "mineflayer": "^4.20.1",
+    "mineflayer-pathfinder": "^2.4.5",
+    "ollama": "^0.5.8",
+    "prismarine-viewer": "^1.28.0",
+    "simple-terminal": "^1.0.5",
+    "vec3": "^0.1.10"
+  }
+}
