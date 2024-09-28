@@ -27,6 +27,10 @@ const path = require('path');
 let term = new simpleTerminal();
 term.automate();
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 class meushi {
     constructor (ui, configPath) {
         this.version = '0.1.1';
@@ -40,7 +44,7 @@ class meushi {
         this.rapidCooldown = 45; // 30 second cooldown
         this.lastChatTime = 0;
 
-        this.tasks = [];
+        this.tasks = {};
 
         this.config = {
             auth: {
@@ -57,7 +61,6 @@ class meushi {
                 admin_only: true,
                 perms: {
                     'BlockyClockwork': 'Admin',
-                    'lolylols': 'Admin',
                     'Meushi_mimi': 'Admin',
                 }
             },
@@ -65,8 +68,7 @@ class meushi {
             humanDelay: true,
         }
 
-        this.bot = mineflayer.createBot(this.config.auth);
-        this.bot.loadPlugin(pathfinder);
+        this.bot = null
 
         this.states = {
             sinceBanner: 0,
@@ -84,69 +86,80 @@ class meushi {
         this.commands.load('./commands');
         this.commands.initModules(this);
 
-        // Load in services.
-        this.services = new modulize(this.ui);
-        this.services.setIdKeyword('service_id');
-        this.services.load('./services');
-        this.services.initModules(this);
-
-        // Handle messages.
-        this.bot.on('message', (message) => {
-            let msg = this.parseMessage(message);
-            this.log(`${msg.username}: ${msg.message}`);
-        
-            try {
-                if (this.config.humanDelay) {
-                    const maxDelay = 3 * 1000;  // 3 seconds
-                    const minDelay = 1 * 1000;  // 1 second
-                    setTimeout(() => {
-                        this.processMessage(message);
-                    }, Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay);
-                } else {
-                    this.processMessage(message);
-                }
-            } catch(e) {
-                this.bot.chat('Critical failure! Shutting down...');
-                console.error(e);  // Log the error for debugging
-                process.exit(1);   // Exit with error code
-            }
-        });
-        
-
-        this.bot.on('kicked', (reason, loggedIn) => {
-            this.log(`Kicked! Attempting to reconnect in 10 seconds.`);
-            this.log(`Reason: ${JSON.stringify(reason)}`);
-            this.bot.quit();
-            this.bot.end();
-
-            // Add a 5-second delay before reconnecting
-            setTimeout(() => {
-                this.bot = mineflayer.createBot(this.config.auth);
-                this.bot.loadPlugin(pathfinder);
-                this.log(`Reconnected successfully!`);
-            }, 10000); // 5000 milliseconds = 5 seconds
-        });
-
-        this.bot.once('spawn', () => {
-            mineflayerViewer(this.bot, { port: 3007, firstPerson: false }); // The viewer will be available at http://localhost:3007
-        });
-
-        this.interface.on('inputSent', (query) => {
-			if(query.input[0] === '@') {
-				this.bot.chat('[BlockyClockwork] ' + query.input.slice(1));
-			} else if(query.input[0] !== '-') {
-				this.bot.chat(query.input);
-			} else {
-				this.processMessage('<Meushi_mimi> ' + query.input);
-			}
-		})
+        this.interface.on('inputSent', this.handleUserInput);
+        this.initBot();
     }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    initBot() {
+        if(this.bot !== null) {
+            this.log('FATAL: Prior instance incorrectly deleted. Aborting.')
+            return;
+        };
+
+        this.log('Reconnecting...');
+
+        setTimeout(() => {
+            this.bot = mineflayer.createBot(this.config.auth);
+            this.bot.loadPlugin(pathfinder);
+
+            this.bot.on('message', this.handleMessage.bind(this));
+            this.bot.on('kicked', this.handleKicked.bind(this));
+            this.bot.once('spawn', this.handleSpawn.bind(this));
+
+            this.commands.modules_initialized = {};
+            this.components.modules_initialized = {};
+            this.commands.initModules(this);
+            this.components.initModules(this);
+        }, 10000);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    handleUserInput(query) {
+        if(query.input[0] === '@') {
+            this.bot.chat('[BlockyClockwork] ' + query.input.slice(1));
+        } else if(query.input[0] !== '-') {
+            this.bot.chat(query.input);
+        } else {
+            this.processMessage('<Meushi_mimi> ' + query.input);
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    addTask(source, eventName, callback) {
+        if(this.tasks[eventName] == undefined) {
+            this.tasks[eventName] = [callback];
+        } else {
+            this.tasks[eventName].push(callback);
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    triggerTask(eventName, ...args) {
+        if(this.tasks[eventName] !== undefined) {
+            this.tasks[eventName].forEach(callback => callback(...args));
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     async log(message) {
         let trimmed = message.split('\n').join(' ');
         fs.appendFileSync('log.txt', `${trimmed}\n`);
         await this.interface.print(trimmed)
     }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // A self-limiting chat function. rapid messages are those less than 30 seconds in time differential. 
     // If the count exceeds 3 then we enter whisper mode and continue to only use whispers until the last public message was send long enough ago to exceed the cooldown period.
@@ -186,7 +199,55 @@ class meushi {
         this.lastChatTime = timeSeconds;
     }
 
-    ////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    handleMessage(message) {
+        let msg = this.parseMessage(message);
+            this.log(`${msg.username}: ${msg.message}`);
+        
+            try {
+                if (this.config.humanDelay) {
+                    const maxDelay = 3 * 1000;  // 3 seconds
+                    const minDelay = 1 * 1000;  // 1 second
+                    setTimeout(() => {
+                        this.processMessage(message);
+                    }, Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay);
+                } else {
+                    this.processMessage(message);
+                }
+            } catch(e) {
+                this.bot.chat('Critical failure! Shutting down...');
+                console.error(e);  // Log the error for debugging
+                process.exit(1);   // Exit with error code
+            }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    handleKicked(reason, loggedIn) {
+        this.log(`Kicked! Attempting to reconnect in 10 seconds.`);
+        this.log(`Reason: ${JSON.stringify(reason)}`);
+        
+        this.bot.quit();
+        this.bot.end();
+        this.bot.once('end', () => {
+            this.bot.removeAllListeners();
+            this.bot = null;
+            this.initBot();
+        });
+    }
+    
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    handleSpawn() {
+        mineflayerViewer(this.bot, {port: 3007, firstPerson: false});
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // Checks if a message contains the command prefix and passes it to the command processor
     // Otherwise, it checks if the bot was spoken to.
@@ -244,7 +305,8 @@ class meushi {
         }
     }
 
-    ////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // Breaks down a message into user and message segments for further processing.
     parseMessage(rawInput) {
@@ -271,8 +333,11 @@ class meushi {
             message: msg.toString()
         }; 
     }
-
-    ////////////////////////////////////////////////////////////////
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
 let bot_instance = new meushi(term);
