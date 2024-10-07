@@ -1,12 +1,10 @@
-const { isThursday } = require("date-fns");
 const fs = require("fs");
 
 class modulize {
-    constructor (log_method = console.log) {
+    constructor (log_method = console) {
 
         this.log = (text) => {
-            log_method(text);
-            fs.appendFileSync('log.txt', `${text}\n`);
+            log_method.log(text);
         }
 
         this.id_keyword = 'id';

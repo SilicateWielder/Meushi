@@ -1,4 +1,4 @@
-# Meushi! V0.1.1
+# Meushi! V0.1.3
 
 A smart Minecraft bot with personality.
 
@@ -43,14 +43,14 @@ The development system is virtualized.
  - Mc-Data
  - Simple-Sqlite3
 
- ## Architecture
+## Architecture
 
  Because I think it's neat, I've chosen to adopt a modular architecture. This also helps my final, feeble braincell digest what I'm looking at.
 
  The system is split into two main parts: The core which is persistently loaded, and packages. Packages can be dynamically loaded/unloaded/reloaded to aid in debugging without killing and restarting the bot. While it isn't perfect, it does let me quickly test and debug; I'm still working out the bugs with this.
 
 
- ## Project State
+## Project State
 
  It's a dumpster fire. Hopefully I can slow the burn so I don't freeze this winter.
 
@@ -58,10 +58,12 @@ The development system is virtualized.
 
  I may eventually accept contributions to the project, but for now I want to focus on cleaning things up, and refining the core APIs. Components will be added over time as I trim the fat so-to-speak.
 
- ## IMMEDIATE TO-DO
-
- - Overhaul core functionality
- - Remove bugs
- - Expand Module API.
- - Decouple bot instancing for more reliable reconnects.
- - Write setup scripts.
+## Changes
+ - Replaced simle-terminal with a termvas.
+ - Implemented hand-rolled UI using termvas (It's awful).
+ - Modified brain DB to retrieve memory in a more sequential context.
+ - Seperated event logic within meushi.js
+ - Fixed relogging in the event of being kicked.
+ - Implemented periodic advertising.
+ - Altered message handling to instead use the chat event instead of message event.
+ 

@@ -9,42 +9,102 @@
 // standalone applications. Kind of like an OS.
 //
 ////////////////////////////////////////////////////////////////////////////////////
+//
+// V0.1.2A CHANGES:
+//   - Migrated from use of 'simple-terminal' to custom UI using termvas
+//   - Stripped unused dependencies
+//   - Stripped unused code
+//   - Implemented Cleanmode flag.
+//   - 
+////////////////////////////////////////////////////////////////////////////////////
 
 // Import dependencies.
 require('dotenv').config();
+const fs = require('fs');
 const mineflayer = require('mineflayer');
 const { mineflayer: mineflayerViewer } = require('prismarine-viewer');
-const { getBufferFromStream } = require('prismarine-viewer/viewer');
-const  simpleTerminal = require('simple-terminal');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const mcData = require('minecraft-data');
 
-const fs = require('fs');
+const ui = require('./term.js');
 const modulize = require('./modulize.js');
-const path = require('path');
 
 // Configure Simple Terminal.
-let term = new simpleTerminal();
-term.automate();
+let term = new ui();
+term.init();
+term.render();
+term.autoRender();
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 class meushi {
     constructor (ui, configPath) {
-        this.version = '0.1.1';
+        this.version = '0.1.3';
         this.interface = ui;
+        this.interface.log('Starting...!');
 
         this.mcData = mcData;
         this.Movements = Movements;
         this.goals = goals;
+
+        // Chat limiter variables.
         this.rapidCount = 0; // Current count.
         this.rapidLimit = 2; // 3 message limit.
         this.rapidCooldown = 45; // 30 second cooldown
-        this.lastChatTime = 0;
+        this.lastChatTime = 0; //timestamp.
 
-        this.tasks = {};
+        this.adNext = 0; // time for next ad.
+        this.ads = [
+            `Moo! I'm Meushi, an AI bot in training. Say my name to speak to me!`,
+            `I wonder what -moo does?`,
+            `Moo!`,
+            `Please keep in mind that I am always learning from the discussions here.`,
+            `Moo! I hope everyone is doing alright today.`,
+            `You can use -help to see what I can do!`,
+            `Don't forget -talk is another way to chat with me!`,
+            `-moo might surprise you! Try it sometime!`,
+            `Having trouble? -help is here for you!`,
+            `Moo! I can load some interesting -packages. Curious?`,
+            `If you're feeling adventurous, use -help [command] to learn more about it.`,
+            `Did you know? The bot-admin can grant temporary bot-admin permissions! Moo!`,
+            `Psst, only the developer can use -config. They're special like that. Moo!`,
+            `Moo! Remember, -kill is just for pretend! I'm not going anywhere!`,
+            `I'm here to help! Use -about if you want to learn more about me!`,
+            `Hey everyone! Moo! Let's make today a great day!`,
+            `I'm always practicing my moos. Try -moo to hear one!`,
+            `Moo! Want to see what I'm capable of? Use -packages to learn more!`,
+            `Remember, I'm always learning! Let's make each conversation count. Moo!`,
+            `Moo! Did you know you can talk to me directly with -talk?`,
+            `Feeling curious? Use -help help to see how help works! Moo!`,
+            `Moo! Hope everyone here is staying safe and happy!`,
+            `Try -moo if you need a little smile! I’m good at that.`,
+            `Moo! Temporary bot-admin permissions are sometimes a thing!`,
+            `-talk isn't the only way to reach me, but it's one of the friendliest! Moo!`,
+            `Moo! Don't worry, even if you use -kill, I'll be back before you know it!`,
+            `Moo! Use -help [command] to dive deeper into what I can do!`,
+            `Don't be shy, I'm here to help and chat whenever you need. Moo!`,
+            `Moo! Exploring packages is fun! Use -packages to see what I've got loaded!`,
+            `I'm always here, learning and mooing! Let’s chat and learn together.`,
+            `Curious about my commands? Give -help a try. Moo!`,
+            `Moo! The developer has some special tricks, like -config, just for them!`,
+            `Moo! I'm still learning, so be patient if I don’t know something... yet!`,
+            `Hey! If you want to chat, just say my name or use -talk! Moo!`,
+            `Did you know? I can tell you what -moo does, but it's more fun to try it!`,
+            `Moo! Sometimes I even surprise myself with what I can learn!`,
+            `Moo! Use -help to explore all the commands you can use!`,
+            `Moo! If you use -kill, just know I'll be back in no time!`,
+            `Feeling confused? -help is here to lend a hoof. Moo!`,
+            `Moo! Did you know starting a message with my name is a great way to get my attention?`,
+            `Moo! I'm always ready to chat, just start with my name!`,
+            `Moo! Don't be shy, say my name if you'd like to chat!`,
+            `Moo! Sometimes the best way to start is just by saying my name!`,
+            `Moo! Want to chat? Just start your message with my name!`,
+            `Moo! I'm always here, just say my name and let's talk!`,
+            `Moo! Talking to me is easy! Start with my name and let's have fun!`
+        ];
 
         this.config = {
             auth: {
@@ -58,108 +118,175 @@ class meushi {
             },
             security: {
                 restricted: false,
-                admin_only: true,
+                admin_only: false,
                 perms: {
                     'BlockyClockwork': 'Admin',
+                    'lolylols': 'Admin',
                     'Meushi_mimi': 'Admin',
                 }
             },
-            whisperEnabled: true,
-            humanDelay: true,
+            settings: {
+                whisperEnabled: false,
+                humanDelay: false,
+            },
+            // Legacy defs. Need time to realocate and confirm functionality.
+            whisperEnabled: false,
+            humanDelay: false,
         }
 
-        this.bot = null
+        this.interface.updateHost(process.env.SERVER_MAIN);
+        this.interface.updateTarget(process.env.SERVER_VERSION);
 
-        this.states = {
-            sinceBanner: 0,
-        }
+        this.bot = null;
+        this.startBot();
+
+        this.interface.on('inputSent', (query) => {
+			this.handleConsoleInput(query);
+		})
 
         // Load in components.
-        this.components = new modulize(this.ui);
+        this.components = new modulize(this.interface);
         this.components.setIdKeyword('component_id');
-        this.components.load('./components');
+        if (process.env.CLEAN_MODE === 'false') this.components.load('./components');
         this.components.initModules(this);
-
+        
         // Load in commands.
-        this.commands = new modulize(this.ui);
+        this.commands = new modulize(this.interface);
         this.commands.setIdKeyword('command_id');
-        this.commands.load('./commands');
+        if (process.env.CLEAN_MODE === 'false') this.commands.load('./commands');
         this.commands.initModules(this);
 
-        this.interface.on('inputSent', this.handleUserInput);
-        this.initBot();
+        this.interface.set
+
+        // Redirect console to our logging system. Yeah...
+        console.log = (q) => {
+            this.interface.log(q);
+        }
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    initBot() {
-        if(this.bot !== null) {
-            this.log('FATAL: Prior instance incorrectly deleted. Aborting.')
-            return;
-        };
-
-        this.log('Reconnecting...');
-
-        setTimeout(() => {
-            this.bot = mineflayer.createBot(this.config.auth);
-            this.bot.loadPlugin(pathfinder);
-
-            this.bot.on('message', this.handleMessage.bind(this));
-            this.bot.on('kicked', this.handleKicked.bind(this));
-            this.bot.once('spawn', this.handleSpawn.bind(this));
-
-            this.commands.modules_initialized = {};
-            this.components.modules_initialized = {};
-            this.commands.initModules(this);
-            this.components.initModules(this);
-        }, 10000);
+    displayAd() {
+        let ad = this.ads[Math.floor(Math.random() * this.ads.length)];
+        
+        let timeNow = Math.floor(Date.now() / 1000);
+        if(timeNow > this.adNext) {
+            this.chat(ad, 'Meushi_mimi', false);
+            this.adNext = timeNow + (60 + Math.random() * 150);
+        }
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    startBot() {
+        if(this.bot !== null) throw new Error ('PRIOR BOT INSTANCE PRESENT. CANNOT START.')
 
-    handleUserInput(query) {
+        this.bot = mineflayer.createBot(this.config.auth);
+        this.bot.loadPlugin(pathfinder);
+
+        // Handle messages.
+        this.bot.on('chat', (username, message) => {
+            this.handleMessage(username, message);
+
+            this.displayAd();
+        });
+        
+
+        this.bot.on('kicked', (reason, loggedIn) => {
+            this.handleKick(reason, loggedIn);
+        });
+
+        this.bot.once('spawn', () => {
+            this.handleFirstSpawn();
+            setInterval(() => {this.interface.updateUsers(this.bot.players)}, 30000);
+            //mineflayerViewer(this.bot, { port: 3007, firstPerson: false }); // The viewer will be available at http://localhost:3007
+        });
+
+        this.bot.on('move', () => {
+            let pos = this.bot.entity.position;
+            //this.interface.log(JSON.stringify(this.bot.entity.position));
+            this.interface.updatePosition(pos);
+        });
+
+        this.bot.on('forcedMove', () => {
+            let pos = this.bot.entity.position;
+            //this.interface.log(JSON.stringify(this.bot.entity.position));
+            this.interface.updatePosition(pos);
+        });
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    handleConsoleInput(query) {
         if(query.input[0] === '@') {
-            this.bot.chat('[BlockyClockwork] ' + query.input.slice(1));
+            // Send message as user.
+            this.bot.chat('[Bot-Admin] ' + query.input.slice(1));
         } else if(query.input[0] !== '-') {
+            // Send message as bot.
             this.bot.chat(query.input);
         } else {
-            this.processMessage('<Meushi_mimi> ' + query.input);
+            // forwar to normal command parser.
+            this.processMessage('Meushi_mimi', query.input);
         }
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    addTask(source, eventName, callback) {
-        if(this.tasks[eventName] == undefined) {
-            this.tasks[eventName] = [callback];
-        } else {
-            this.tasks[eventName].push(callback);
+    handleMessage (username, message) {
+        this.log(`${username}: ${message}`);
+        
+        try {
+            if (this.config.humanDelay) {
+                const maxDelay = 3 * 1000;  // 3 seconds
+                const minDelay = 1 * 1000;  // 1 second
+                setTimeout(() => {
+                    this.processMessage(username, message);
+                }, Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay);
+            } else {
+                this.processMessage(username, message);
+            }
+        } catch(e) {
+            this.bot.chat('Critical failure! Shutting down...');
+            console.error(e);  // Log the error for debugging
+            process.exit(1);   // Exit with error code
         }
     }
+    
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    triggerTask(eventName, ...args) {
-        if(this.tasks[eventName] !== undefined) {
-            this.tasks[eventName].forEach(callback => callback(...args));
-        }
+    handleFirstSpawn () {
+        mineflayerViewer(this.bot, { port: 3007, firstPerson: false }); // The viewer will be available at http://localhost:3007
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    async log(message) {
+    handleKick(reason, loggedIn) {
+        this.log(`Kicked! Attempting to reconnect in 60 seconds.`);
+        this.log(`Reason: ${JSON.stringify(reason)}`);
+        this.bot.removeAllListeners();
+        try{ this.bot.viewer.close() } catch (e) {};
+        this.bot.quit();
+        this.bot.end();
+        
+        this.bot = null;
+
+        // Add a 60-second delay before reconnecting
+        setTimeout(() => {
+            this.startBot();
+        }, 60000); // 1000 milliseconds = 1 second
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    log(message) {
         let trimmed = message.split('\n').join(' ');
         fs.appendFileSync('log.txt', `${trimmed}\n`);
-        await this.interface.print(trimmed)
+        this.interface.log(trimmed)
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // A self-limiting chat function. rapid messages are those less than 30 seconds in time differential. 
     // If the count exceeds 3 then we enter whisper mode and continue to only use whispers until the last public message was send long enough ago to exceed the cooldown period.
@@ -198,115 +325,9 @@ class meushi {
         this.bot.chat(message);
         this.lastChatTime = timeSeconds;
     }
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    handleMessage(message) {
-        let msg = this.parseMessage(message);
-            this.log(`${msg.username}: ${msg.message}`);
-        
-            try {
-                if (this.config.humanDelay) {
-                    const maxDelay = 3 * 1000;  // 3 seconds
-                    const minDelay = 1 * 1000;  // 1 second
-                    setTimeout(() => {
-                        this.processMessage(message);
-                    }, Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay);
-                } else {
-                    this.processMessage(message);
-                }
-            } catch(e) {
-                this.bot.chat('Critical failure! Shutting down...');
-                console.error(e);  // Log the error for debugging
-                process.exit(1);   // Exit with error code
-            }
-    }
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    handleKicked(reason, loggedIn) {
-        this.log(`Kicked! Attempting to reconnect in 10 seconds.`);
-        this.log(`Reason: ${JSON.stringify(reason)}`);
-        
-        this.bot.quit();
-        this.bot.end();
-        this.bot.once('end', () => {
-            this.bot.removeAllListeners();
-            this.bot = null;
-            this.initBot();
-        });
-    }
     
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    handleSpawn() {
-        mineflayerViewer(this.bot, {port: 3007, firstPerson: false});
-    }
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    // Checks if a message contains the command prefix and passes it to the command processor
-    // Otherwise, it checks if the bot was spoken to.
-    async processMessage(message) {
-        const messageManifest = this.parseMessage(message);
-        
-        const params = messageManifest.message.split(' ');
-
-        // Stop early if there is no command trigger.
-        if(params[0][0] != '-' || params[0].length < 2 || (params[0][0] == '-' && params[0][1] == ' ')) {
-           return;
-        }
-
-        let commandId = params[0].substring(1);
-        let cmd = this.commands.retrieveModule(commandId);
-
-        // Retrieve user and their perms/admin status.
-        const user = messageManifest.username;
-        const userPerms = this.config.security.perms[user];
-        const isAdmin = (userPerms != undefined && userPerms === 'Admin');
-
-        // Deny user if admin-only mode active.
-        if(this.config.security.admin_only === true && !isAdmin) {
-            this.bot.chat(`Sorry, ${user}! I'm only allowed to respond to my admins right now! Try again later.`);
-            return;
-        }
-
-        // Return error if there is no matching command.
-        if(cmd === undefined && commandId != '') {
-            this.log('failed: ' + commandId + ' does not exist.')
-            this.bot.chat(`[ERROR]: Command "${commandId}" not installed.`, user, true);
-            return;
-        }
-
-        if(cmd.properties.restricted === true && this.config.security.restricted === true) {
-            if(!isAdmin) {
-                this.bot.chat(`I cannot allow you to do that, ${user}! Only admins can use this right now.`)
-                return;
-            }
-        }
-
-        if(cmd.properties.admin_only === true) {
-            if(!isAdmin) {
-                this.bot.chat(`I cannot allow you to do that, ${user}! This command is for admins only!`)
-                return;
-            }
-        }
-
-        try {
-            await cmd.executable(this, messageManifest.username, params.slice(1));
-        } catch (e) {
-            this.log(e.stack + e.mesage);
-            this.commands.unload(commandId);
-            this.bot.chat(`Command '${commandId}' failed, so it's package @ ${cmd.filepath} was unloaded! Tell BlockyClockwork to check the logs please!`)
-        }
-    }
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // Breaks down a message into user and message segments for further processing.
     parseMessage(rawInput) {
@@ -333,11 +354,72 @@ class meushi {
             message: msg.toString()
         }; 
     }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    // Checks if a message contains the command prefix and passes it to the command processor
+    // Otherwise, it checks if the bot was spoken to.
+    async processMessage(username, message) {
+        if(message === undefined) this.log('WHAT?! NO MESSAGE?!')
+        
+        const params = ('' + message).split(' ');
+
+        // Stop early if there is no command trigger.
+        if(params[0][0] != '-' || params[0].length < 2 || (params[0][0] == '-' && params[0][1] == ' ')) {
+           return;
+        }
+
+        let commandId = params[0].substring(1);
+        let cmd = this.commands.retrieveModule(commandId);
+
+        // Retrieve user and their perms/admin status.
+        const user = username;
+        const userPerms = this.config.security.perms[user];
+        const isAdmin = (userPerms != undefined && userPerms === 'Admin');
+
+        // Deny user if admin-only mode active.
+        if(this.config.security.admin_only === true && !isAdmin) {
+            this.bot.chat(`Sorry, ${user}! I'm only allowed to respond to my admins right now! Try again later.`);
+            return;
+        }
+
+        // Return error if there is no matching command.
+        if(cmd === undefined && commandId != '') {
+            this.log('failed: ' + commandId + ' does not exist.')
+            this.bot.chat(`[ERROR]: Command "${commandId}" not installed.`, user, true);
+            return;
+        }
+
+        // Restrict user if in restricted mode and command is restricted.
+        if(cmd.properties.restricted === true && this.config.security.restricted === true) {
+            if(!isAdmin) {
+                this.bot.chat(`I cannot allow you to do that, ${user}! Only admins can use this right now.`)
+                return;
+            }
+        }
+
+        // Retrict user if command is specifically admin-only.
+        if(cmd.properties.admin_only === true) {
+            if(!isAdmin) {
+                this.bot.chat(`I cannot allow you to do that, ${user}! This command is for admins only!`)
+                return;
+            }
+        }
+
+        // Run command if all other nets are not triggered.
+        try {
+            await cmd.executable(this, username, params.slice(1));
+        } catch (e) {
+            // Force the command to be unloaded if we get an error.
+            this.log(e.stack + e.message);
+            this.commands.unload(commandId);
+            this.bot.chat(`Command '${commandId}' failed, so it's package @ ${cmd.filepath} was unloaded! Tell BlockyClockwork to check the logs please!`)
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 
 let bot_instance = new meushi(term);

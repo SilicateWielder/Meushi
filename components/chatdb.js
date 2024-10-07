@@ -15,7 +15,7 @@ async function updateChunk (message) {
 
 async function getMessages(query, user = undefined) {
     const start = process.hrtime();
-    let rows = await memDB.queryMemory(query, 5);
+    let rows = await memDB.queryMemory(query, 1);
     const end = process.hrtime(start);
     meushi.log(`Took ${end[0]} seconds and ${end[1] / 1000000} milliseconds to queryDB.`);
 
